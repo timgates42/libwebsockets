@@ -170,13 +170,12 @@ lws_dir(const char *dirpath, void *user, lws_dir_callback_function cb)
 		if (cb(dirpath, user, &lde)) {
 			while (++i < n)
 				free(namelist[i]);
+			ret = 0; /* told to stop by cb */
 			goto bail;
 		}
 skip:
 		free(namelist[i]);
 	}
-
-	ret = 0;
 
 bail:
 	free(namelist);
@@ -301,7 +300,7 @@ lws_plugins_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
 	const char *p;
 
 	if (strlen(lde->name) < 7)
-		return 0;
+		return 0; /* keep going */
 
 	/*
 	 * The actual plugin names for protocol plugins look like
@@ -323,12 +322,13 @@ lws_plugins_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
 
 	/* if he's given a filter, only match if base matches it */
 	if (pa->filter && strcmp(base, pa->filter))
-		return 0;
+		return 0; /* keep going */
 
 	lws_snprintf(path, sizeof(path) - 1, "%s/%s", dirpath, lde->name);
 	lwsl_notice("   %s\n", path);
 
-	return !lws_plat_dlopen(pa->pplugin, path, base, pa->_class,
+	/* keep going (return 0) if we didn't find it */
+	return !! lws_plat_dlopen(pa->pplugin, path, base, pa->_class,
 				pa->each, pa->each_user);
 }
 
@@ -338,6 +338,7 @@ lws_plugins_init(struct lws_plugin **pplugin, const char * const *d,
 		 each_plugin_cb_t each, void *each_user)
 {
 	struct lws_plugins_args pa;
+	int ret = 1;
 
 	pa.pplugin = pplugin;
 	pa._class = _class;
@@ -346,11 +347,14 @@ lws_plugins_init(struct lws_plugin **pplugin, const char * const *d,
 	pa.filter = filter;
 
 	while (d && *d) {
-		lws_dir(*d, &pa, lws_plugins_dir_cb);
+		lwsl_info("%s: trying %s\n", __func__, *d);
+		if (!lws_dir(*d, &pa, lws_plugins_dir_cb))
+			ret = 0;
+
 		d++;
 	}
 
-	return 0;
+	return ret;
 }
 
 int
